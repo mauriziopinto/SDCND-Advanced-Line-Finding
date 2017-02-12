@@ -319,17 +319,26 @@ def pipeline(frame):
     # threshold
     img = threshold(img)
 
+    f = np.copy(img)
+
     # do a full processing if we don't know yet where the lanes are
     if (len(last_right_fit)==0 and len(last_left_fit)==0):
         img, ret = detect_lane_full(img)
         last_right_fit = ret["right_fit"]
         last_left_fit = ret["left_fit"]
+        txt, left_curverad, right_curverad = calculate_radius(img, ret["left_fit"], ret["right_fit"])
     else:
         # re-use information from previous processing to optimize the lane detection phase
         img, ret = detect_lane_subsequent(img, last_left_fit, last_right_fit)
         last_right_fit = ret["right_fit"]
         last_left_fit = ret["left_fit"]
-       
+        # sanity check and fallback on detect full
+        txt, left_curverad, right_curverad = calculate_radius(img, ret["left_fit"], ret["right_fit"])
+        if (abs(left_curverad - right_curverad) > 1000):
+            img, ret = detect_lane_full(f)
+            last_right_fit = ret["right_fit"]
+            last_left_fit = ret["left_fit"]
+            txt, left_curverad, right_curverad = calculate_radius(img, ret["left_fit"], ret["right_fit"])
 
     left_fit = ret["left_fit"]
     right_fit = ret["right_fit"]
@@ -339,7 +348,6 @@ def pipeline(frame):
     mid_lane = ret["mid_lane"] 
     left = ret["left"]
     right = ret["right"]
-
     
     # draw polynomials curves on the warped image (bird-view)
     img = lanes_warped(img, fit_leftx, fit_rightx, fity)
@@ -408,5 +416,3 @@ if __name__ == "__main__":
     white_clip.write_videofile(output, audio=False)
 
     print("Completed.")
-
-    
