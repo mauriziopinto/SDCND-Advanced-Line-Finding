@@ -276,7 +276,7 @@ The blue and red bars in the image show respectively:
 * the exact center of the lane
 * the (approximate) position where the vehicle is
 
-The two small bar give a graphical representation of the distance between from center of the lane.
+The two small bars give a simple graphical representation of the distance between from center of the lane.
 
 Here is an example of my result on a test image:
 
