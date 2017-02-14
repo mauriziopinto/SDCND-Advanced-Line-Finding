@@ -13,12 +13,21 @@ global last_right_fit
 last_left_fit = np.zeros(0)
 last_right_fit = np.zeros(0)
 
-# calibrate camera using the chessboard reference images
-def calibrate_camera(image_url):
+def calibrate_camera(calibration_folder):
+    """
+    Calculate the camera matrix and the distortion coefficients using a set of calibration images
+
+    Args:
+        calibration_folder: the folder where the calibration images (chessboards images) are
+ 
+    Returns:
+        mtx: the camera matrix
+        dist: the distorsion coefficients
+    """
     print("Calibrating camera...")
     nx, ny = 9, 6
 
-    images = glob.glob(image_url)
+    images = glob.glob(calibration_folder)
 
     objp = np.zeros((nx*ny,3), np.float32)
     objp[:,:2] = np.mgrid[0:nx, 0:ny].T.reshape(-1,2)
@@ -41,34 +50,70 @@ def calibrate_camera(image_url):
     print("Camera calibrated successfully")
     return mtx, dist
 
-# correct an image distortion using the parameters obtained during the camera calibration phase
 def undistort(distorted_img, mtx, dist):
+    """
+    Return an undistorted image obtained using the camera matrix and distorsion coefficients obtained during the camera calibration phase
+
+    Args:
+        distorted_img: the distorted image
+        mtx: the camera matrix:
+        dist: the distorsion coefficients
+ 
+    Returns:
+        the undistorted image
+    """
     return cv2.undistort(distorted_img, mtx, dist, None, mtx)
 
-# apply a perspective trasformation to an image (by means of a transformation matrix)
 def warp(img):
+    """
+    Apply a perspective trasformation to an image (by means of a transformation matrix)
+
+    Args:
+        img: the image
+ 
+    Returns:
+        the image after the perspective transformation with matrix warp_matrix
+    """
     return cv2.warpPerspective(img, warp_matrix, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
 
-# convert a HLS image to a binary one
-def binary_img(img):
-    H = img[:,:,0]
-    L = img[:,:,1]
-    S = img[:,:,2]
-    thresh = (90, 255)
-    binary = np.zeros_like(S)
-    binary[(S > thresh[0]) & (S <= thresh[1])] = 1
-    return binary
+def adjust_gamma(image, gamma=1.0):
+    """Apply gamma conversion to RGB Image.
+        Args:
+            image: RGB Image
+            gamma: rate for gamma conversion
+        Returns:
+           image: converted RGB Image
+    """
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255
+        for i in np.arange(0, 256)]).astype("uint8")
+    return cv2.LUT(image, table)
 
-# apply thresholding tecniques to improve the accuracy of lane recognition
 def threshold(img):
+    """
+    Detect lanes scanning the whole image and identifying where the lanes are by means of histograms
 
-    # Gaussian Blur
-    kernel_size = 5
-    img = cv2.GaussianBlur(img, (kernel_size, kernel_size), 0)
+    Args:
+        binary_warped: a bird-view image of the road
+ 
+    Returns:
+        out_img: image with lane detected
+        ret: a dict containing left_fit, right_fit, fit_leftx, fit_rightx, ploty, mid_lane (center of the lane), left (left position of the lane), right (right position of the lane)
+    """
+
+    # Adjust gamma
+    img = adjust_gamma(img, 0.5)
     # Convert to HLS color space and separate the S channel
     # Note: img is the warped image and not the undistorted image
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-    s_channel = hls[:,:,2]
+    H = hls[:,:,0]
+    S = hls[:,:,2]
+
+    # Threshold color channel
+    h_binary = cv2.inRange(H, 15, 90)
+    s_binary = cv2.inRange(S, 100, 255)
+
+    hs_binary = cv2.bitwise_and(h_binary, s_binary)
     
     # Grayscale image
     # NOTE: we already saw that standard grayscaling lost color information for the lane lines
@@ -76,35 +121,37 @@ def threshold(img):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     
     # Sobel x
-    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0) # Take the derivative in x
+    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=11) # Take the derivative in x
     abs_sobelx = np.absolute(sobelx) # Absolute x derivative to accentuate lines away from horizontal
     scaled_sobel = np.uint8(255*abs_sobelx/np.max(abs_sobelx))
     
     # Threshold x gradient
     thresh_min = 20
-    thresh_max = 100
+    thresh_max = 140
     sxbinary = np.zeros_like(scaled_sobel)
     sxbinary[(scaled_sobel >= thresh_min) & (scaled_sobel <= thresh_max)] = 1
     
-    # Threshold color channel
-    s_thresh_min = 170
-    s_thresh_max = 255
-    s_binary = np.zeros_like(s_channel)
-    s_binary[(s_channel >= s_thresh_min) & (s_channel <= s_thresh_max)] = 1
-    
     # Stack each channel to view their individual contributions in green and blue respectively
     # This returns a stack of the two binary images, whose components you can see as different colors
-    color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, s_binary))
+    color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, hs_binary))
     
     # Combine the two binary thresholds
     combined_binary = np.zeros_like(sxbinary)
-    combined_binary[(s_binary == 1) | (sxbinary == 1)] = 1
+    combined_binary[(hs_binary == 1) | (sxbinary == 1)] = 1
 
     return combined_binary
 
-
-# detect lanes scanning the whole image and identifying where the lanes are by means of histograms
 def detect_lane_full(binary_warped):
+    """
+    Detect lanes scanning the whole image and identifying where the lanes are by means of histograms
+
+    Args:
+        binary_warped: a bird-view image of the road
+ 
+    Returns:
+        out_img: image with lane detected
+        ret: a dict containing left_fit, right_fit, fit_leftx, fit_rightx, ploty, mid_lane (center of the lane), left (left position of the lane), right (right position of the lane)
+    """
     
     # Input is a warped binary image
 
@@ -197,8 +244,19 @@ def detect_lane_full(binary_warped):
 
     return out_img, ret
 
-# detect lines but relying on the information found in previous processing stage
 def detect_lane_subsequent(binary_warped, left_fit, right_fit):
+    """
+    Detect lines but relying on the information found in previous processing stage
+
+    Args:
+        binary_warped: a bird-view image of the road
+        left_fit: fit for left lane from previous processing stage
+        right_fit:: fit for right lane from previous processing stage
+ 
+    Returns:
+        out_img: image with lane detected
+        ret: a dict containing left_fit, right_fit, fit_leftx, fit_rightx, ploty, mid_lane (center of the lane), left (left position of the lane), right (right position of the lane)
+    """
 
     # Assume you now have a new warped binary image
     # from the next frame of video (also called "binary_warped")
@@ -244,25 +302,59 @@ def detect_lane_subsequent(binary_warped, left_fit, right_fit):
     return out_img, ret
 
 
-# calculate the radius of curvature, for both left and right lane
-def calculate_radius(image, left_fit, right_fit):
+def calculate_radius(image, leftx, rightx, ploty, l, r):
+    """
+    Calculate the radius of curvature, for both left and right lane
+
+    Args:
+        image: image
+        leftx: 
+        rightx: 
+        ploty:
+ 
+    Returns:
+        txt: text to overlay on the frame
+        left_curverad: left lane curvature radius
+        right_curverad: right lane curvature radius
+    """
+
+    # define conversion in x and y from pixel space to meters
     y_eval = 719
-    left_curverad = ((1 + (2*left_fit[0]*y_eval + left_fit[1])**2)**1.5) / np.absolute(2*left_fit[0])
-    right_curverad = ((1 + (2*right_fit[0]*y_eval + right_fit[1])**2)**1.5) / np.absolute(2*right_fit[0])
-    
+    ym_per_pix = 30/720
+    xm_per_pix = 3.7/(l-r)
+
+    # fit new polynomials to x,y in world space
+    left_fit_cr = np.polyfit(ploty*ym_per_pix, leftx*xm_per_pix, 2)
+    right_fit_cr = np.polyfit(ploty*ym_per_pix, rightx*xm_per_pix, 2)
+
+    #calculate the new radii of curvature
+    left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+    right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+
     txt = "LEFT LANE CURVATURE RADIUS (m): " + str(round(left_curverad,2)) + "\nRIGHT LANE CURVATURE RADIUS (m): " + str(round(right_curverad,2))
 
     return txt, left_curverad, right_curverad
 
-
-# display info on the screen
 def display_info(image, text, mid_lane, l, r):
+    """
+    Display info on the screen
+
+    Args:
+        image: image
+        text: text to overlay containing the left and right curvature radiuses
+        mid_lane: approx. position of the center of the lane
+        l: position of the left lane in the image
+        r: position of the right lane in the image
+ 
+    Returns:
+        image: image with text overlaid
+    """
     font = cv2.FONT_HERSHEY_PLAIN
     y0, dy = 20, 20
 
     img_center = int(image.shape[1] / 2)
     lane_center = int(l + ((r-l)/2))
-    xm_per_pix = 3.7/700 # transform from pixels to meters 
+    xm_per_pix = 3.7/(r-l) # transform from pixels to meters 
     text = text + "\nDISTANCE FROM CENTER OF LANE (m): " + str( round((img_center - lane_center) * xm_per_pix, 2) )
 
     # split the text on multiple lines
@@ -275,11 +367,22 @@ def display_info(image, text, mid_lane, l, r):
     return image
 
 
-# draw the lanes on an empty canvas (bird-view)
 def lanes_warped(warped, left_fitx, right_fitx, ploty ):
+    """
+    Draw the lanes on an empty canvas (bird-view)
+
+    Args:
+        warped: bird-view image of the road
+        left_fitx:
+        right_fitx:
+        ploty:
+ 
+    Returns:
+        color_warp: black canvas, bird-view, with lanes overlaid (to be later merged with the original image)
+    """
+
     # Create an empty image
-    binary = binary_img(warped)
-    warp_zero = np.zeros_like(binary).astype(np.uint8)
+    warp_zero = np.zeros_like(warped[:,:,2]).astype(np.uint8)
     # three channels
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
     
@@ -293,9 +396,18 @@ def lanes_warped(warped, left_fitx, right_fitx, ploty ):
     cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
     return color_warp
 
-
-# merge lanes (bird-view) with the original undistorted frame
 def final_image(image, color_warp):   
+    """
+    Merge lanes (bird-view) with the original undistorted frame
+
+    Args:
+        image: original, undistorted, image of the road
+        color_warp: black-canvas, bird-view, with lanes overlaid
+   
+    Returns:
+        result: original, undistorted, image of the road with lanes detected (green semi-transparent filled poly)
+    """
+
     # Inverse perspective matrix (inverse_warp_matrix)
     lanes = cv2.warpPerspective(color_warp, inverse_warp_matrix, (image.shape[1], image.shape[0])) 
     # Combine the result with the original image
@@ -303,8 +415,45 @@ def final_image(image, color_warp):
     return result
 
 
-# transformation pipeline
+
+def sanity_check(ret, radius_l, radius_r):
+    """
+    Transformation pipeline
+
+    Args:
+        ret: a dict containing left_fit, right_fit, fit_leftx, fit_rightx, ploty, mid_lane (center of the lane), left (left position of the lane), right (right position of the lane)
+   
+    Returns:
+        true if the sanity check was successful
+    """
+    radii_ok = True
+    width_ok = True
+    parallel_ok = True
+
+    radius_diff = abs( 1./radius_l - 1./radius_r)
+    if (radius_diff > 0.001):
+        radii_ok = False
+
+    width = abs(ret["left"] - ret["right"]) # average width of the lane
+    if (width < 570 or width > 680):
+        width_ok = False
+
+    fit_diff = abs(ret["left_fit"][1] - ret["right_fit"][1])
+    if (fit_diff>0.6):
+        parallel_ok = False
+
+    return radii_ok and width_ok and parallel_ok
+
 def pipeline(frame):
+    """
+    Transformation pipeline
+
+    Args:
+        frame: an image (a frame of the video)
+   
+    Returns:
+        img: the input image after all the steps in the pipeline have been executed
+    """
 
     # last polynomials found for left and right lane
     global last_right_fit
@@ -313,11 +462,12 @@ def pipeline(frame):
     # first step: correct the image distortion
     img = undistort(frame, camera_matrix, dist_coeff)
 
+    # threshold
+    img = threshold(img)
+    
     # perspective transform (to bird-view)
     img = warp(img)
 
-    # threshold
-    img = threshold(img)
 
     f = np.copy(img)
 
@@ -326,19 +476,17 @@ def pipeline(frame):
         img, ret = detect_lane_full(img)
         last_right_fit = ret["right_fit"]
         last_left_fit = ret["left_fit"]
-        txt, left_curverad, right_curverad = calculate_radius(img, ret["left_fit"], ret["right_fit"])
     else:
         # re-use information from previous processing to optimize the lane detection phase
         img, ret = detect_lane_subsequent(img, last_left_fit, last_right_fit)
+        txt, radius_l, radius_r = calculate_radius(img, ret["fit_leftx"], ret["fit_rightx"], ret["fity"], ret["left"], ret["right"])
         last_right_fit = ret["right_fit"]
         last_left_fit = ret["left_fit"]
         # sanity check and fallback on detect full
-        txt, left_curverad, right_curverad = calculate_radius(img, ret["left_fit"], ret["right_fit"])
-        if (abs(left_curverad - right_curverad) > 1000):
+        if not sanity_check(ret, radius_l, radius_r):
             img, ret = detect_lane_full(f)
             last_right_fit = ret["right_fit"]
             last_left_fit = ret["left_fit"]
-            txt, left_curverad, right_curverad = calculate_radius(img, ret["left_fit"], ret["right_fit"])
 
     left_fit = ret["left_fit"]
     right_fit = ret["right_fit"]
@@ -356,7 +504,7 @@ def pipeline(frame):
     img = final_image(frame, img)
 
     # calculate the radius of curvature
-    txt, left_curverad, right_curverad = calculate_radius(img, left_fit, right_fit)
+    txt, left_curverad, right_curverad = calculate_radius(img, fit_leftx, fit_rightx, fity, left, right)
 
     # calculate center of lane
     mid_lane = (np.max(fit_rightx) - np.min(fit_leftx))
@@ -380,10 +528,9 @@ if __name__ == "__main__":
     cam_file = 'calibration.npz'
 
     # src and dest points for perspective transform
-    src = np.array([[550, 462],[730, 462], [1280, 720],[120, 720]], dtype=np.float32)
+    src = np.array([[520, 462],[750, 462], [1280, 720],[80, 720]], dtype=np.float32)
     dst = np.array([[0, 0], [1280, 0], [1250, 720],[40, 720]], dtype=np.float32)
 
-    
     # src to dest perspective transformation matrix
     warp_matrix = cv2.getPerspectiveTransform(src, dst)
 
@@ -415,4 +562,4 @@ if __name__ == "__main__":
     # save the video in a file
     white_clip.write_videofile(output, audio=False)
 
-    print("Completed.")
+    print("Completed. Output file: ", output)

@@ -60,40 +60,6 @@ The distortion correction applied to camera images provides the following result
 | ------------- |:-------------:| 
 | ![Distorted][image3] | ![Undistorted][image4]|
 
-####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
-
-**Please note that I preferred to first warp the image and then to apply the threshold**
-
-The perspective transform matrix and its inverse are created in the **main.py**:
-
-```python
-# src and dest points for perspective transform
-src = np.array([[550, 462],[730, 462], [1280, 720],[120, 720]], dtype=np.float32)
-dst = np.array([[0, 0], [1280, 0], [1250, 720],[40, 720]], dtype=np.float32)
-
-
-# src to dest perspective transformation matrix
-warp_matrix = cv2.getPerspectiveTransform(src, dst)
-
-# dst to src perspective transformation matrix
-inverse_warp_matrix = cv2.getPerspectiveTransform(dst, src)
-```
-
-The method that actually implements the transformation is called **warp** and it simply uses the OpenCV **warpPerspective** method. The source and destination points have been manually selected, in order to obtain a region of the road that could potentially apply to most of the frames in the test videos.
-
-
-| Source        | Destination   | 
-|:-------------:|:-------------:| 
-| 550, 462      | 0, 0          | 
-| 730, 462      | 1280, 0       |
-| 1280, 720     | 1250, 720     |
-| 120, 720      | 40, 720       |
-
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
-
-| Original | Warped | 
-| ------------- |:-------------:| 
-| ![Original][image3] | ![Warped][image5]|
 
 
 ####2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
@@ -154,6 +120,39 @@ def threshold(img):
 | ------------- |:-------------:| 
 | ![Original][image5] | ![Binary][image6]|
 
+
+####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+
+The perspective transform matrix and its inverse are created in the **main.py**:
+
+```python
+# src and dest points for perspective transform
+src = np.array([[240,719], [579,450], [712,450], [1165,719]], dtype=np.float32)
+dst = np.array([[300,719], [300,0], [900,0], [900,719]], dtype=np.float32)
+
+
+# src to dest perspective transformation matrix
+warp_matrix = cv2.getPerspectiveTransform(src, dst)
+
+# dst to src perspective transformation matrix
+inverse_warp_matrix = cv2.getPerspectiveTransform(dst, src)
+```
+
+The method that actually implements the transformation is called **warp** and it simply uses the OpenCV **warpPerspective** method. The source and destination points have been manually selected, in order to obtain a region of the road that could potentially apply to most of the frames in the test videos.
+
+
+| Source        | Destination   | 
+|:-------------:|:-------------:| 
+| 240, 719      | 300, 719          | 
+| 579, 450      | 300, 0       |
+| 710, 450     | 900, 0     |
+| 1165, 719      | 900, 719       |
+
+I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
+
+| Original | Warped | 
+| ------------- |:-------------:| 
+| ![Original][image3] | ![Warped][image5]|
 
 
 ####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
@@ -237,6 +236,5 @@ The pipeline performs acceptably well on the challenge video, but it fails quite
 
 Something I would like to improve:
 
-* sanity check (are lanes parallel? does the radius of curvature make sense)
-* thresholding
+* thresholding performances and resilience to different light conditions
 * overall performances (the pipeline, even on a quite powerful computer, is not fast enough to be used on a real stream coming from a dash camera for example)
