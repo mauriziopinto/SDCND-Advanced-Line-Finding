@@ -15,8 +15,8 @@ The goals / steps of this project are the following:
 
 [image1]: ./camera_cal/calibration1.jpg "Calibration image - distorted"
 [image2]: ./output_images/undistorted_chessboard.jpg "Calibration image - distortion corrected"
-[image3]: ./test_images/test1.jpg "Distorted - Camera car"
-[image4]: ./output_images/undistorted_test1.jpg "Undistorted - Camera car"
+[image3]: ./test_images/test3.jpg "Distorted - Camera car"
+[image4]: ./output_images/undistorted_test3.jpg "Undistorted - Camera car"
 [image5]: ./output_images/warped_image_result.jpg "Warped image example"
 [image6]: ./output_images/binary_image_result.jpg "Binary image example"
 [image7]: ./output_images/polynomial_result.jpg "Lane polynomials example"
@@ -144,9 +144,9 @@ def threshold(img):
     return combined_binary
 ```
 
-| Warped | Binary | 
+| Undistorted | Binary | 
 | ------------- |:-------------:| 
-| ![Original][image5] | ![Binary][image6]|
+| ![Undistorted][image4] | ![Binary][image6]|
 
 
 ####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
@@ -178,9 +178,9 @@ The method that actually implements the transformation is called **warp** and it
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
-| Original | Warped | 
+| Binary | Warped | 
 | ------------- |:-------------:| 
-| ![Original][image3] | ![Warped][image5]|
+| ![Binary][image6] | ![Warped][image5]|
 
 
 ####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
