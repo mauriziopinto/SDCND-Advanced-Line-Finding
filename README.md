@@ -67,7 +67,6 @@ The distortion correction applied to camera images provides the following result
 The **threshold** method in main.py implements the transformations I chose to implement:
 
 * Gamma adjustment (in order to mitigate the effect of varying colors of the asphalt)
-* Conversion to grayscale and then Sobel filter on the x axis
 * Threshold for the H and S channel in the HLS version of the image
 * Threshold that identifies the yellow patches in the image (mostly left lane)
 * Threshold that identifies the white patches in the image (mostly right lane)
@@ -144,7 +143,7 @@ def threshold(img):
     return combined_binary
 ```
 
-| Undistorted | Binary | 
+| Undistorted | Thresholded | 
 | ------------- |:-------------:| 
 | ![Undistorted][image4] | ![Binary][image6]|
 
@@ -178,7 +177,7 @@ The method that actually implements the transformation is called **warp** and it
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
-| Binary | Warped | 
+| Thresholded | Warped | 
 | ------------- |:-------------:| 
 | ![Binary][image6] | ![Warped][image5]|
 
@@ -192,12 +191,13 @@ Lane-line pixels are identified in the two following methods in main.py:
 
 The first method implements a full processing with sliding window as described in the Udacity lessons. The second method avoids to do a full scan of the picture and, instead, relies on the areas in the previous image where the lanes have been found previously.
 
-A simple sanity check on the following parameters:
+A simple sanity check on the following parameters makes the **detect_lane_subsequent** fallback on the **detect_lane_full**:
 
 * the difference between the curvature radius of the left and right lanes
-* 
+* average approximate width of the lane in pixels
+* difference between the fit coefficients for the left and right lanes
 
-makes the second method invoke the first (because probably the lane-line pixels detection did not work as expected)
+
 
 | Warped | Polynomials | 
 | ------------- |:-------------:| 
@@ -290,7 +290,11 @@ The thresholding mechanism is still quite unable to cope well with big variation
 
 The pipeline performs acceptably well on the challenge video, but it fails quite bad with the harder challenge video: very sharp bends are not detected correctly.
 
+The pipeline is based on many different parameters (Sobel kernel size, thresholds, etc) and it is quite difficult to find the right combination or, even better, a combination of parameters that can work in any conditions (lights, color of the asphalt, rain, etc)
+
 Something I would like to improve:
 
-* thresholding performances and resilience to different light conditions
+* thresholding performances and resilience to different conditions
+* more robust sanity check
+* rejection of outliers (left or right lane) based on history (e.g. the last 10 lanes detected)
 * overall performances (the pipeline, even on a quite powerful computer, is not fast enough to be used on a real stream coming from a dash camera for example)
