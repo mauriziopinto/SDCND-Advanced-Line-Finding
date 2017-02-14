@@ -4,8 +4,8 @@ The goals / steps of this project are the following:
 
 * Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
 * Apply a distortion correction to raw images.
-* Apply a perspective transform to rectify binary image ("birds-eye view").
 * Use color transforms, gradients, etc., to create a thresholded binary image.
+* Apply a perspective transform to rectify binary image ("birds-eye view").
 * Detect lane pixels and fit to find the lane boundary.
 * Determine the curvature of the lane and vehicle position with respect to center.
 * Warp the detected lane boundaries back onto the original image.
@@ -18,7 +18,7 @@ The goals / steps of this project are the following:
 [image3]: ./test_images/test1.jpg "Distorted - Camera car"
 [image4]: ./output_images/undistorted_test1.jpg "Undistorted - Camera car"
 [image5]: ./output_images/warped_image_result.jpg "Warped image example"
-[image6]: ./output_images/binary_image_result.png "Binary image example"
+[image6]: ./output_images/binary_image_result.jpg "Binary image example"
 [image7]: ./output_images/polynomial_result.jpg "Lane polynomials example"
 [image8]: ./output_images/final_result.jpg "Final result"
 [video1]: ./project_video.mp4 "Video"
@@ -192,7 +192,12 @@ Lane-line pixels are identified in the two following methods in main.py:
 
 The first method implements a full processing with sliding window as described in the Udacity lessons. The second method avoids to do a full scan of the picture and, instead, relies on the areas in the previous image where the lanes have been found previously.
 
-A simple sanity check on the curvature radius of the left and right lanes, makes the second method invoke the first (because probably the lane-line pixels detection did not work as expected)
+A simple sanity check on the following parameters:
+
+* the difference between the curvature radius of the left and right lanes
+* 
+
+makes the second method invoke the first (because probably the lane-line pixels detection did not work as expected)
 
 | Warped | Polynomials | 
 | ------------- |:-------------:| 
@@ -273,7 +278,7 @@ Here is an example of my result on a test image:
 
 ####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Final video output is available [here](./carnd_p4_output.mp4) or on [Youtube](https://youtu.be/c-yJ2WJaFRA)
+Final video output is available [here](./carnd_p4_output.mp4) or on [Youtube](https://youtu.be/Mwz0CjrKeco)
 
 ---
 
