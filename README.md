@@ -66,52 +66,80 @@ The distortion correction applied to camera images provides the following result
 
 The **threshold** method in main.py implements the transformations I chose to implement:
 
-* Gaussian blur with kernel size = 5
+* Gamma adjustment (in order to mitigate the effect of varying colors of the asphalt)
 * Conversion to grayscale and then Sobel filter on the x axis
-* Threshold for the color channel (HLS image)
+* Threshold for the H and S channel in the HLS version of the image
+* Threshold that identifies the yellow patches in the image (mostly left lane)
+* Threshold that identifies the white patches in the image (mostly right lane)
 * Combination of the images resulting from the previous steps
 
 ```python
-# apply thresholding tecniques to improve the accuracy of lane recognition
 def threshold(img):
+    """
+    Detect lanes scanning the whole image and identifying where the lanes are by means of histograms
 
-    # Gaussian Blur
-    kernel_size = 5
-    img = cv2.GaussianBlur(img, (kernel_size, kernel_size), 0)
-    # Convert to HLS color space and separate the S channel
-    # Note: img is the warped image and not the undistorted image
-    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-    s_channel = hls[:,:,2]
+    Args:
+        binary_warped: a bird-view image of the road
+ 
+    Returns:
+        out_img: image with lane detected
+        ret: a dict containing left_fit, right_fit, fit_leftx, fit_rightx, ploty, mid_lane (center of the lane), left (left position of the lane), right (right position of the lane)
+    """
+
+    # Adjust gamma
+    adjust_gamma(img, gamma=0.3)
+
+    # Parameters
+    sobel_kernel=9
+    s_thresh=(180, 190)
+    h_thresh=(21, 100)
+    sx_thresh=(40, 100)
+    dir_thresh=(0.2, 1.2)
+
+    # select the L and S channels from the HLS image
+    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS).astype(np.float)
+    hls_h = hls[:, :, 0]
+    hls_l = hls[:, :, 1]
+    hls_s = hls[:, :, 2]
     
-    # Grayscale image
-    # NOTE: we already saw that standard grayscaling lost color information for the lane lines
-    # Explore gradients in other colors spaces / color channels to see what might work better
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    
+
     # Sobel x
-    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0) # Take the derivative in x
+    sobelx = cv2.Sobel(hls_l, cv2.CV_64F, 1, 0, ksize=sobel_kernel) # Take the derivative in x
     abs_sobelx = np.absolute(sobelx) # Absolute x derivative to accentuate lines away from horizontal
     scaled_sobel = np.uint8(255*abs_sobelx/np.max(abs_sobelx))
-    
+
     # Threshold x gradient
-    thresh_min = 20
-    thresh_max = 100
     sxbinary = np.zeros_like(scaled_sobel)
-    sxbinary[(scaled_sobel >= thresh_min) & (scaled_sobel <= thresh_max)] = 1
-    
-    # Threshold color channel
-    s_thresh_min = 170
-    s_thresh_max = 255
-    s_binary = np.zeros_like(s_channel)
-    s_binary[(s_channel >= s_thresh_min) & (s_channel <= s_thresh_max)] = 1
-    
-    # Stack each channel to view their individual contributions in green and blue respectively
-    # This returns a stack of the two binary images, whose components you can see as different colors
-    color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, s_binary))
-    
-    # Combine the two binary thresholds
+    sxbinary[(scaled_sobel >= sx_thresh[0]) & (scaled_sobel <= sx_thresh[1])] = 1
+
+    # Direction Threshold
+    sobely = cv2.Sobel(hls_l, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    abs_sobely = np.absolute(sobely)
+    direction=np.arctan2(abs_sobely, abs_sobelx)
+    sdbinary = np.zeros_like(direction)
+    sdbinary[(direction >= dir_thresh[0]) & (direction <= dir_thresh[1])] = 1
+
+    # Threshold s channel
+    s_binary = np.zeros_like(hls_s)
+    s_binary[(hls_s >= s_thresh[0]) & (hls_s <= s_thresh[1])] = 1
+
+    # Threshold h channel
+    h_binary = np.zeros_like(hls_h)
+    h_binary[(hls_h >= h_thresh[0]) & (hls_h <= h_thresh[1])] = 1
+
+    # Select the yellow patches
+    yellow_img = cv2.inRange(img, (204,204,0), (255,255,153))
+
+    # Select the white patches
+    white_img = cv2.inRange(img, (200, 200, 200), (255, 255, 255))
+
+    # Merge white and yellow patches
+    yellow_and_white_img = yellow_img | white_img
+    yellow_and_white_img = np.divide(yellow_and_white_img, 255)
+
+    # Stack each channel
     combined_binary = np.zeros_like(sxbinary)
-    combined_binary[(s_binary == 1) | (sxbinary == 1)] = 1
+    combined_binary[(h_binary == 1) | (yellow_and_white_img == 1) | ((sxbinary == 1) & (sdbinary == 1)) ] = 1
 
     return combined_binary
 ```
@@ -127,8 +155,8 @@ The perspective transform matrix and its inverse are created in the **main.py**:
 
 ```python
 # src and dest points for perspective transform
-src = np.array([[240,719], [579,450], [712,450], [1165,719]], dtype=np.float32)
-dst = np.array([[300,719], [300,0], [900,0], [900,719]], dtype=np.float32)
+src = np.array([[490, 482],[810, 482], [1250, 720],[40, 720]], dtype=np.float32)
+dst = np.array([[0, 0], [1280, 0], [1250, 720],[40, 720]], dtype=np.float32)
 
 
 # src to dest perspective transformation matrix
@@ -143,10 +171,10 @@ The method that actually implements the transformation is called **warp** and it
 
 | Source        | Destination   | 
 |:-------------:|:-------------:| 
-| 240, 719      | 300, 719          | 
-| 579, 450      | 300, 0       |
-| 710, 450     | 900, 0     |
-| 1165, 719      | 900, 719       |
+| 490, 482      | 0, 0          | 
+| 810, 482      | 1280, 0       |
+| 1250, 720     | 1250, 720     |
+| 40, 720      | 40, 720       |
 
 I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
 
@@ -175,12 +203,35 @@ A simple sanity check on the curvature radius of the left and right lanes, makes
 The radiuses of curvature for left and right lane are calculated in the **calculate_radius** method:
 
 ```python
-# calculate the radius of curvature, for both left and right lane
-def calculate_radius(image, left_fit, right_fit):
+def calculate_radius(image, leftx, rightx, ploty, l, r):
+    """
+    Calculate the radius of curvature, for both left and right lane
+
+    Args:
+        image: image
+        leftx: 
+        rightx: 
+        ploty:
+ 
+    Returns:
+        txt: text to overlay on the frame
+        left_curverad: left lane curvature radius
+        right_curverad: right lane curvature radius
+    """
+
+    # define conversion in x and y from pixel space to meters
     y_eval = 719
-    left_curverad = ((1 + (2*left_fit[0]*y_eval + left_fit[1])**2)**1.5) / np.absolute(2*left_fit[0])
-    right_curverad = ((1 + (2*right_fit[0]*y_eval + right_fit[1])**2)**1.5) / np.absolute(2*right_fit[0])
-    
+    ym_per_pix = 30/720
+    xm_per_pix = 3.7/(l-r)
+
+    # fit new polynomials to x,y in world space
+    left_fit_cr = np.polyfit(ploty*ym_per_pix, leftx*xm_per_pix, 2)
+    right_fit_cr = np.polyfit(ploty*ym_per_pix, rightx*xm_per_pix, 2)
+
+    #calculate the new radii of curvature
+    left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
+    right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
+
     txt = "LEFT LANE CURVATURE RADIUS (m): " + str(round(left_curverad,2)) + "\nRIGHT LANE CURVATURE RADIUS (m): " + str(round(right_curverad,2))
 
     return txt, left_curverad, right_curverad
@@ -230,7 +281,7 @@ Final video output is available [here](./carnd_p4_output.mp4) or on [Youtube](ht
 
 ####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-The thresholding mechanism is still quite unable to cope well with big variations in the color of the asphalt or, more in general, with variations in the lights and shadows: using a thresholding on HLS improved a lot the performances when compared to the first project in the Udacity course, but it is still not sufficient for any kind of environment.
+The thresholding mechanism is still quite unable to cope well with big variations in the color of the asphalt or, more in general, with variations in the lights and shadows: using a thresholding on HLS and RGB (yellow and white patches) improved a lot the performances when compared to the first project in the Udacity course, but it is still not sufficient for any kind of environment.
 
 The pipeline performs acceptably well on the challenge video, but it fails quite bad with the harder challenge video: very sharp bends are not detected correctly.
 

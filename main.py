@@ -84,10 +84,13 @@ def adjust_gamma(image, gamma=1.0):
         Returns:
            image: converted RGB Image
     """
+
+
     invGamma = 1.0 / gamma
     table = np.array([((i / 255.0) ** invGamma) * 255
         for i in np.arange(0, 256)]).astype("uint8")
     return cv2.LUT(image, table)
+
 
 def threshold(img):
     """
@@ -102,44 +105,62 @@ def threshold(img):
     """
 
     # Adjust gamma
-    img = adjust_gamma(img, 0.5)
-    # Convert to HLS color space and separate the S channel
-    # Note: img is the warped image and not the undistorted image
-    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-    H = hls[:,:,0]
-    S = hls[:,:,2]
+    adjust_gamma(img, gamma=0.3)
 
-    # Threshold color channel
-    h_binary = cv2.inRange(H, 15, 90)
-    s_binary = cv2.inRange(S, 100, 255)
+    # Parameters
+    sobel_kernel=9
+    s_thresh=(180, 190)
+    h_thresh=(21, 100)
+    sx_thresh=(40, 100)
+    dir_thresh=(0.2, 1.2)
 
-    hs_binary = cv2.bitwise_and(h_binary, s_binary)
+    # select the L and S channels from the HLS image
+    hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS).astype(np.float)
+    hls_h = hls[:, :, 0]
+    hls_l = hls[:, :, 1]
+    hls_s = hls[:, :, 2]
     
-    # Grayscale image
-    # NOTE: we already saw that standard grayscaling lost color information for the lane lines
-    # Explore gradients in other colors spaces / color channels to see what might work better
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    
+
     # Sobel x
-    sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=11) # Take the derivative in x
+    sobelx = cv2.Sobel(hls_l, cv2.CV_64F, 1, 0, ksize=sobel_kernel) # Take the derivative in x
     abs_sobelx = np.absolute(sobelx) # Absolute x derivative to accentuate lines away from horizontal
     scaled_sobel = np.uint8(255*abs_sobelx/np.max(abs_sobelx))
-    
+
     # Threshold x gradient
-    thresh_min = 20
-    thresh_max = 140
     sxbinary = np.zeros_like(scaled_sobel)
-    sxbinary[(scaled_sobel >= thresh_min) & (scaled_sobel <= thresh_max)] = 1
-    
-    # Stack each channel to view their individual contributions in green and blue respectively
-    # This returns a stack of the two binary images, whose components you can see as different colors
-    color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, hs_binary))
-    
-    # Combine the two binary thresholds
+    sxbinary[(scaled_sobel >= sx_thresh[0]) & (scaled_sobel <= sx_thresh[1])] = 1
+
+    # Direction Threshold
+    sobely = cv2.Sobel(hls_l, cv2.CV_64F, 0, 1, ksize=sobel_kernel)
+    abs_sobely = np.absolute(sobely)
+    direction=np.arctan2(abs_sobely, abs_sobelx)
+    sdbinary = np.zeros_like(direction)
+    sdbinary[(direction >= dir_thresh[0]) & (direction <= dir_thresh[1])] = 1
+
+    # Threshold s channel
+    s_binary = np.zeros_like(hls_s)
+    s_binary[(hls_s >= s_thresh[0]) & (hls_s <= s_thresh[1])] = 1
+
+    # Threshold h channel
+    h_binary = np.zeros_like(hls_h)
+    h_binary[(hls_h >= h_thresh[0]) & (hls_h <= h_thresh[1])] = 1
+
+    # Select the yellow patches
+    yellow_img = cv2.inRange(img, (204,204,0), (255,255,153))
+
+    # Select the white patches
+    white_img = cv2.inRange(img, (200, 200, 200), (255, 255, 255))
+
+    # Merge white and yellow patches
+    yellow_and_white_img = yellow_img | white_img
+    yellow_and_white_img = np.divide(yellow_and_white_img, 255)
+
+    # Stack each channel
     combined_binary = np.zeros_like(sxbinary)
-    combined_binary[(hs_binary == 1) | (sxbinary == 1)] = 1
+    combined_binary[(h_binary == 1) | (yellow_and_white_img == 1) | ((sxbinary == 1) & (sdbinary == 1)) ] = 1
 
     return combined_binary
+    
 
 def detect_lane_full(binary_warped):
     """
@@ -155,12 +176,22 @@ def detect_lane_full(binary_warped):
     
     # Input is a warped binary image
 
+    # Remove the center of the image, where we are sure there are no lanes
+    y = binary_warped.shape[0]
+    x = binary_warped.shape[1]
+    center = int(x / 2)
+    offset = 200
+    
+    a3 = np.array( [[[center-offset,0],[center+offset,0],[center+offset,y],[center-offset,y]]], dtype=np.int32 )
+    cv2.fillPoly( binary_warped, a3, 0 )
+
     # Take a histogram of the bottom half of the image
     histogram = np.sum(binary_warped[binary_warped.shape[0]/2:,:], axis=0)
 
     # Create an output image to draw on and  visualize the result
     out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
 
+    
     # Find the peak of the left and right halves of the histogram
     # These will be the starting point for the left and right lines
     midpoint = np.int(histogram.shape[0]/2)
@@ -179,7 +210,7 @@ def detect_lane_full(binary_warped):
     leftx_current = leftx_base
     rightx_current = rightx_base
     # Set the width of the windows +/- margin
-    margin = 100
+    margin = 70
     # Set minimum number of pixels found to recenter window
     minpix = 50
     # Create empty lists to receive left and right lane pixel indices
@@ -264,7 +295,7 @@ def detect_lane_subsequent(binary_warped, left_fit, right_fit):
     nonzero = binary_warped.nonzero()
     nonzeroy = np.array(nonzero[0])
     nonzerox = np.array(nonzero[1])
-    margin = 100
+    margin = 70
     margin_to_draw = 20
     left_lane_inds = ((nonzerox > (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2] - margin)) & (nonzerox < (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2] + margin)))
     right_lane_inds = ((nonzerox > (right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2] - margin)) & (nonzerox < (right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2] + margin)))
@@ -356,7 +387,7 @@ def display_info(image, text, mid_lane, l, r):
     lane_center = int(l + ((r-l)/2))
     xm_per_pix = 3.7/(r-l) # transform from pixels to meters 
     text = text + "\nDISTANCE FROM CENTER OF LANE (m): " + str( round((img_center - lane_center) * xm_per_pix, 2) )
-
+    
     # split the text on multiple lines
     for i, line in enumerate(text.split('\n')):
         y = y0 + i*dy
@@ -393,7 +424,7 @@ def lanes_warped(warped, left_fitx, right_fitx, ploty ):
 
     # Draw the lane onto the warped blank image
     # We will later change perspective and merge this image with the original frame
-    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 180))
     return color_warp
 
 def final_image(image, color_warp):   
@@ -435,7 +466,7 @@ def sanity_check(ret, radius_l, radius_r):
         radii_ok = False
 
     width = abs(ret["left"] - ret["right"]) # average width of the lane
-    if (width < 570 or width > 680):
+    if (width < 890 or width > 990):
         width_ok = False
 
     fit_diff = abs(ret["left_fit"][1] - ret["right_fit"][1])
@@ -462,12 +493,18 @@ def pipeline(frame):
     # first step: correct the image distortion
     img = undistort(frame, camera_matrix, dist_coeff)
 
+   
     # threshold
     img = threshold(img)
+
+    
+    # uncomment to be able to display the binary img
+    #img[ img == 1] = 255
+    #img = np.dstack((img, img, img))
+
     
     # perspective transform (to bird-view)
     img = warp(img)
-
 
     f = np.copy(img)
 
@@ -528,7 +565,7 @@ if __name__ == "__main__":
     cam_file = 'calibration.npz'
 
     # src and dest points for perspective transform
-    src = np.array([[520, 462],[750, 462], [1280, 720],[80, 720]], dtype=np.float32)
+    src = np.array([[490, 482],[810, 482], [1250, 720],[40, 720]], dtype=np.float32)
     dst = np.array([[0, 0], [1280, 0], [1250, 720],[40, 720]], dtype=np.float32)
 
     # src to dest perspective transformation matrix
@@ -550,12 +587,10 @@ if __name__ == "__main__":
 
     # file where the video will be saved
     output = './carnd_p4_output.mp4'
-
+    
     # source video
     clip1 = VideoFileClip('./project_video.mp4')
-    #clip1 = VideoFileClip('./harder_challenge_video.mp4')
-    #clip1 = VideoFileClip('./challenge_video.mp4')
-
+    
     # apply the pipeline transformation to all the frames in the video
     white_clip = clip1.fl_image(pipeline)
 
