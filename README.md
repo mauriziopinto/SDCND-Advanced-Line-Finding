@@ -252,8 +252,18 @@ I implemented this step in method **final_image** in main.py:
 * then the two images (original frame, without distorsion correction, and images with black background and green lanes) are merged
 
 ```python
-# merge lanes (bird-view) with the original undistorted frame
 def final_image(image, color_warp):   
+    """
+    Merge lanes (bird-view) with the original undistorted frame
+
+    Args:
+        image: original, undistorted, image of the road
+        color_warp: black-canvas, bird-view, with lanes overlaid
+   
+    Returns:
+        result: original, undistorted, image of the road with lanes detected (green semi-transparent filled poly)
+    """
+
     # Inverse perspective matrix (inverse_warp_matrix)
     lanes = cv2.warpPerspective(color_warp, inverse_warp_matrix, (image.shape[1], image.shape[0])) 
     # Combine the result with the original image
